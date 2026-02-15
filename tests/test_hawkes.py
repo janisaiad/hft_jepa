@@ -1,7 +1,14 @@
+import os
 import pytest
 import numpy as np
 import polars as pl
+from dotenv import load_dotenv
+
+load_dotenv()
 from hft.models.hawkes import Hawkes
+
+# we use FOLDER_PATH from .env for parquet tests; fallback for CI or missing data
+FOLDER_PATH = os.getenv("FOLDER_PATH", "/Data/janis.aiad/lobib/DB_MBP_10/")
 
 def test_hawkes_initialization():
     N = 2
@@ -101,7 +108,24 @@ def test_convolution_product():
     assert conv_result1.shape == (N, N)
     
     
+def _find_parquet_path():
+    """we find first available parquet in FOLDER_PATH ticker subdirs"""
+    folder = FOLDER_PATH.rstrip("/")
+    if not os.path.isdir(folder):
+        return None
+    for ticker in os.listdir(folder):
+        ticker_path = os.path.join(folder, ticker)
+        if os.path.isdir(ticker_path):
+            for f in os.listdir(ticker_path):
+                if f.endswith(".parquet"):
+                    return os.path.join(ticker_path, f)
+    return None
+
+
 def test_parquet_reading_and_wiener_hopf():
+    parquet_path = _find_parquet_path()
+    if parquet_path is None:
+        pytest.skip(f"no parquet files found in {FOLDER_PATH}; set FOLDER_PATH in .env")
     
     N = 8  # 8 event types for market data
     mu = np.array([0.1] * N)  # Base intensities
@@ -114,8 +138,8 @@ def test_parquet_reading_and_wiener_hopf():
     
     hawkes = Hawkes(phi=phi, psi=psi, mu=mu, N=N, stepsize=100)
     
-    # Test parquet reading
-    df = hawkes.get_parquet("data/DB_MBP_10/data/hawkes_dataset/GBDC/GBDC_2023-07-17.parquet")
+    # we read parquet from FOLDER_PATH
+    df = hawkes.get_parquet(parquet_path)
     assert isinstance(df, pl.DataFrame)
     
     # Test g estimation

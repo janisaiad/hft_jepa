@@ -1,0 +1,138 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages essentiels
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage{pdflscape}  % Pour l'orientation paysage
+\usepackage{longtable} % Pour les tables sur plusieurs pages
+
+% Configuration de la géométrie de la page
+\geometry{
+    a4paper,
+    top=2.5cm,
+    bottom=2.5cm,
+    left=2.5cm,
+    right=2.5cm
+}
+
+% Configuration des liens hypertexte
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Analyse des Données de Trading Haute Fréquence},
+    pdfauthor={Votre Nom},
+    pdfsubject={Rapport d'Analyse},
+    pdfkeywords={HFT, Trading, Analyse, Finance}
+}
+
+% Configuration du style des listings de code
+\lstset{
+    basicstyle=\ttfamily\small,
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true,
+    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space}
+}
+
+\title{\textbf{Analyse des Données de Trading Haute Fréquence}}
+\author{Votre Nom}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    Résumé de votre analyse ici. Présentez brièvement les objectifs, la méthodologie et les principales conclusions de votre étude.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+\subsection{Contexte}
+\subsection{Objectifs}
+\subsection{Méthodologie}
+
+\section{Données et Méthodes}
+\subsection{Description des Données}
+
+\begin{longtable}{@{}lS[table-format=1.2e-1]S[table-format=1.2e-1]S[table-format=3.2]S[table-format=1.2e+4]S[table-format=1.2]S[table-format=4.2]@{}}
+\caption{Statistiques par stock} \\
+\toprule
+{Ticker} & {Tick size} & {Min price} & {Max price} & {Mean trades/day} & {Avg spread} & {Trades at bid (\%)} \\
+\midrule
+\endfirsthead
+\caption{Statistiques par stock (suite)} \\
+\toprule
+{Ticker} & {Tick size} & {Min price} & {Max price} & {Mean trades/day} & {Avg spread} & {Trades at bid (\%)} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{7}{r@{}}{Suite à la page suivante...}
+\endfoot
+\bottomrule
+\endlastfoot
+GOOGL & 0.01 & 147.53 & 183.34 & 9.40e+04 & 1.89 & 55.84 \\
+AAPL & 0.01 & 219.71 & 250.20 & 9.27e+04 & 2.48 & 55.06 \\
+AMZN & 0.01 & 180.57 & 232.07 & 9.35e+04 & 2.96 & 50.48 \\
+AAL & 0.01 & 8.95 & 19.19 & 1.43e+04 & 1.31 & 60.00 \\
+MSFT & 0.01 & 405.47 & 455.76 & 6.54e+04 & 8.78 & 53.41 \\
+INTC & 0.01 & 18.52 & 33.39 & 5.37e+04 & 1.16 & 59.98 \\
+CXW & 0.01 & 9.71 & 24.99 & 1.93e+03 & 6.98 & 55.25 \\
+GEO & 0.01 & 10.76 & 29.94 & 3.79e+03 & 3.86 & 53.88 \\
+GT & 0.01 & 7.31 & 20.44 & 1.21e+04 & 1.59 & 59.79 \\
+IOVA & 0.01 & 3.15 & 51.36 & 8.97e+03 & 1.66 & 58.63 \\
+LCID & 0.01 & 2.53 & 4.43 & 7.42e+03 & 1.10 & 65.58 \\
+MLCO & 0.01 & 4.47 & 16.99 & 8.86e+03 & 1.69 & 61.59 \\
+NTAP & 0.01 & 107.27 & 161.95 & 7.14e+03 & 23.70 & 53.18 \\
+PTEN & 0.01 & 6.32 & 20.17 & 7.96e+03 & 1.58 & 59.42 \\
+PTON & 0.01 & 2.71 & 10.59 & 8.51e+03 & 1.24 & 61.39 \\
+VLY & 0.01 & 4.29 & 14.48 & 5.50e+03 & 1.51 & 59.93 \\
+GCMG & 0.01 & 5.05 & 16.60 & 673.99 & 17.72 & 56.06 \\
+CX & 0.01 & 5.51 & 7.63 & 2.07e+03 & 10.95 & 67.60 \\
+HL & 0.01 & 4.19 & 7.90 & 1.69e+03 & 6.51 & 60.96 \\
+RIOT & 0.01 & 6.01 & 35.34 & 3.06e+03 & 34.21 & 62.06 \\
+UA & 0.01 & 6.00 & 8.39 & 903.37 & 13.44 & 59.47 \\
+VOD & 0.01 & 8.02 & 10.36 & 2.71e+03 & 1.13 & 62.27 \\
+PSNY & 0.01 & 31.91 & 37.18 & 1.87e+03 & 1.73 & 60.06 \\
+ERIC & 0.01 & 5.60 & 7.86 & 1.65e+03 & 4.91 & 70.59 \\
+\end{longtable}
+
+\subsection{Prétraitement}
+\subsection{Méthodes d'Analyse}
+
+\section{Résultats}
+\subsection{Statistiques Descriptives}
+\subsection{Analyse des Corrélations}
+\subsection{Patterns Identifiés}
+
+\section{Discussion}
+\subsection{Interprétation des Résultats}
+\subsection{Limitations}
+\subsection{Implications}
+
+\section{Conclusion}
+
+\appendix
+\section{Annexes}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
