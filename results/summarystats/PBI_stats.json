@@ -1,0 +1,29 @@
+{
+    "TICKER": {
+        "Tick size": 0,
+        "Min price": 4.62,
+        "Max price": 7.68,
+        "Mean number of trades per day": 813.3064516129032,
+        "Average spread": NaN,
+        "Max spread": -Infinity
+    },
+    "Mean volume per trade": 84.82072384729797,
+    "Average duration between moves": 68101451114.48444,
+    "Median duration between moves": 27901132529.0,
+    "Max duration between moves": 1723442253395.0,
+    "Stand. Dev. duration between moves": 106315709041.7028,
+    "Median volume per trade": 87.0,
+    "Stand. Dev. Volume per trade": 433.12484107843346,
+    "Transactions at the Bid price (%)": 16.834903321764997,
+    "Number of jumps over the week": 0.0,
+    "Average size of the jumps": 0.0,
+    "Min. size of the jumps": 0.0,
+    "Max. size of the jumps": 0.0,
+    "Stand. Dev. size of the jumps": 0.0,
+    "Prop. jumps of size 1": 0,
+    "Prop. jumps of size -1": 0,
+    "Prop. jumps of size 2": 0,
+    "Prop. jumps of size -2": 0,
+    "Prop. jumps of size 3": 0,
+    "Prop. jumps of size -3": 0
+}
