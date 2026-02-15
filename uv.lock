@@ -610,7 +610,7 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7f/c9/3739fdbcd2cf26c0e16b0e5262571d3de3ab322ba29944dce36685e2125c/hawkes-1.0.0.tar.gz", hash = "sha256:e2cae699492ccddb6a17f31321088c463f1344ded8b20c14b3366d31611833ee", size = 12939 }
 
 [[package]]
-name = "hft"
+name = "hft-jepa"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

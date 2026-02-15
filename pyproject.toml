@@ -1,7 +1,7 @@
 [project]
-name = "hft"
+name = "hft_jepa"
 version = "0.1.0"
-description = "Repository for HFT"
+description = "Repository for HFT Jepa"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -42,8 +42,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"hft" = "."} # "QR1" = "models/QR1/", "QR2" = "models/QR2/"
-packages = ["hft"] # ["QR1", "QR2"]
+package-dir = {"hft_jepa" = "."} # "QR1" = "models/QR1/", "QR2" = "models/QR2/"
+packages = ["hft_jepa"] # ["QR1", "QR2"]
 
 
 
