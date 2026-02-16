@@ -63,7 +63,7 @@ SCALES = [
     {"bar_sec": 60, "label": "60s"},
 ]
 NUM_EPOCHS = 2
-NUM_STEPS_PER_SCALE = 400
+NUM_STEPS_PER_SCALE = 2000
 
 # %% train and embed per scale
 def build_jepa(state_dim, seq_len, device):
@@ -103,6 +103,8 @@ def train_scale(loader, data_config, scale_label, num_steps):
     scaler = _scaler(device.type, False)
     dtype = torch.float32
     losses = []
+    pred_losses = []
+    reg_losses = []
     step = 0
     loader_iter = iter(loader)
     while step < num_steps:
@@ -119,10 +121,12 @@ def train_scale(loader, data_config, scale_label, num_steps):
         loc_b = torch.nan_to_num(loc_b, nan=0.0, posinf=0.0, neginf=0.0)
         jepa_opt.zero_grad()
         with _autocast(device.type, False, dtype):
-            _, (jepa_loss, _, _, _, pl) = jepa.unroll(
+            _, (jepa_loss, rloss, _, _, pl) = jepa.unroll(
                 x_b, a_b, nsteps=8, unroll_mode="autoregressive", ctxt_window_time=1,
                 compute_loss=True, return_all_steps=False,
             )
+        pred_losses.append(pl.item())
+        reg_losses.append(rloss.item())
         scaler.scale(jepa_loss).backward()
         torch.nn.utils.clip_grad_norm_(jepa.parameters(), max_norm=1.0)
         scaler.step(jepa_opt)
@@ -137,8 +141,8 @@ def train_scale(loader, data_config, scale_label, num_steps):
         total = jepa_loss.item() + probe_loss.item()
         losses.append(total)
         step += 1
-        if step % 25 == 0:
-            print(f"  {scale_label} step {step}/{num_steps} loss={total:.4f}")
+        if step % 100 == 0:
+            print(f"  {scale_label} step {step}/{num_steps} total={total:.4f} pred={pl.item():.4f} reg={rloss.item():.4f}")
     jepa.eval()
     all_z = []
     with torch.no_grad():
@@ -151,7 +155,7 @@ def train_scale(loader, data_config, scale_label, num_steps):
             all_z.append(z_b.cpu())
     z_all = torch.cat(all_z, dim=0)
     z_2d = z_all[:, :, :, 0, 0].permute(0, 2, 1)
-    return jepa, np.array(losses), z_2d
+    return jepa, np.array(losses), np.array(pred_losses), np.array(reg_losses), z_2d
 
 # %% run training for each scale
 results = {}
@@ -159,18 +163,24 @@ for scale in SCALES:
     print(f"\n--- Scale: {scale['label']} (bar_sec={scale['bar_sec']}) ---")
     loader, val_loader, data_config = init_data("hft_timeseries", cfg_data={"bar_sec": scale["bar_sec"]})
     print(f"  Batches: {len(loader)}, batch_size: {data_config.batch_size}")
-    jepa, losses, z_2d = train_scale(loader, data_config, scale["label"], NUM_STEPS_PER_SCALE)
-    results[scale["label"]] = {"losses": losses, "z_2d": z_2d, "jepa": jepa}
+    jepa, losses, pred_losses, reg_losses, z_2d = train_scale(loader, data_config, scale["label"], NUM_STEPS_PER_SCALE)
+    results[scale["label"]] = {"losses": losses, "pred_losses": pred_losses, "reg_losses": reg_losses, "z_2d": z_2d, "jepa": jepa}
 
-# %% plot loss curves per scale
-fig, ax = plt.subplots(figsize=(8, 4))
+# %% plot loss curves per scale (total, pred, reg)
+fig, axes = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
 for label, r in results.items():
-    ax.plot(r["losses"], label=label, alpha=0.8)
-ax.set_xlabel("Step")
-ax.set_ylabel("Loss")
-ax.set_title("Training loss by time scale (volume normalized by bar_sec)")
-ax.legend()
-ax.grid(True, alpha=0.3)
+    axes[0].plot(r["losses"], label=label, alpha=0.8)
+    axes[1].plot(r["pred_losses"], label=label, alpha=0.8)
+    axes[2].plot(r["reg_losses"], label=label, alpha=0.8)
+axes[0].set_ylabel("Loss")
+axes[0].set_title("Total (jepa + probe)")
+axes[1].set_title("Prediction loss")
+axes[2].set_title("Regularizer loss")
+for ax in axes:
+    ax.set_xlabel("Step")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+plt.suptitle("Training loss by time scale (volume normalized by bar_sec)")
 plt.tight_layout()
 plt.savefig(out_dir / "multiscale_losses.png", dpi=100)
 plt.show()
