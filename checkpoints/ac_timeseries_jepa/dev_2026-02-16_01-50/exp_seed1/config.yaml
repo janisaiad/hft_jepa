@@ -1,0 +1,42 @@
+logging:
+  log_wandb: false
+  log_every: 10
+  save_every_n_epochs: 1
+  tqdm_silent: false
+meta:
+  load_model: 'false'
+  enable_plan_eval: false
+  seed: 1
+data:
+  env_name: hft_timeseries
+  batch_size: 64
+  num_workers: 0
+  pin_mem: false
+  persistent_workers: false
+training:
+  use_amp: true
+  dtype: float16
+model:
+  compile: false
+  state_dim: 3
+  action_dim: 1
+  henc: 64
+  hpre: 64
+  dstc: 64
+  nsteps: 8
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    first_t_only: false
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+optim:
+  epochs: 5
+  lr: 0.001
+  grad_clip_enc: 2.0
+  grad_clip_pred: 2.0
+  weight_decay: 1.0e-05

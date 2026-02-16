@@ -8,27 +8,42 @@ dependencies = [
     "arch>=7.2.0",
     "armagarch>=1.0.4",
     "cython>=0.28",
+    "decord>=0.6.0",
     "dotenv>=0.9.9",
+    "einops>=0.8.1",
     "fastparquet>=2024.11.0",
+    "fire>=0.7.0",
+    "gymnasium>=1.1.1",
     "hawkes>=1.0.0",
+    "huggingface-hub>=0.33.2",
     "hurst>=0.0.5",
+    "imageio>=2.0.0",
     "jupyter>=1.1.1",
     "jupytext>=1.16.7",
     "matplotlib>=3.10.0",
     "numpy>=2.2.3",
+    "omegaconf>=2.0.0",
+    "opencv-python>=4.12.0",
     "pandas>=2.2.3",
     "plotly>=6.0.0",
     "polars[gpu]>=1.23.0",
     "pyarrow>=19.0.1",
+    "pymunk>=6.0.0",
     "pytest>=8.3.5",
     "ruptures>=1.1.9",
+    "ruamel.yaml>=0.18.0",
+    "scikit-learn>=1.7.0",
     "scipy>=1.15.2",
     "seaborn>=0.13.2",
     "setuptools>=75.8.2",
     "statsmodels>=0.14.4",
+    "submitit>=1.5.0",
     "swig>=4.3.0",
+    "tiktoken>=0.9.0",
     "torch>=2.10.0",
+    "torchvision>=0.20.0",
     "tqdm>=4.67.1",
+    "wandb[media]>=0.21.1",
 ]
 
 
@@ -42,10 +57,10 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"hft_jepa" = "."} # "QR1" = "models/QR1/", "QR2" = "models/QR2/"
-packages = ["hft_jepa"] # ["QR1", "QR2"]
+package-dir = {"hft_jepa" = ".", "eb_jepa" = "models/eb_jepa"}
+packages = ["hft_jepa", "eb_jepa", "eb_jepa.datasets", "eb_jepa.datasets.two_rooms"]
 
 
 
 [tool.setuptools.package-data]
-"*" = ["*.py", "*.pyi", "*.c", "*.h", "*.cpp", "*.hpp"]
+"*" = ["*.py", "*.pyi", "*.c", "*.h", "*.cpp", "*.hpp", "*.yaml"]

@@ -1,0 +1,10 @@
+batch_size: 64
+seq_len: 17
+bar_sec: 60
+state_dim: 8
+action_dim: 1
+num_samples: 10000
+val_ratio: 0.1
+use_synthetic: false
+state_features: rich
+symbols: ["GOOGL", "AAPL", "AAL"]

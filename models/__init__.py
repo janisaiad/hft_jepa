@@ -1,3 +1,2 @@
-from . import hawkes,pyhawkes
-
-__all__ = ["hawkes","pyhawkes"]
+# we expose eb_jepa via top-level "eb_jepa" package; models provides optional subpackages
+__all__ = []
