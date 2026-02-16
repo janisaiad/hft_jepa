@@ -26,6 +26,20 @@ class SquareLossSeq(nn.Module):
         return square_cost_seq(state, predi)
 
 
+class CosineLossSeq(nn.Module):
+    """Cosine loss (1 - cos_sim) over sequences. Scale-invariant, good for unbounded embeddings."""
+
+    def __init__(self, proj=None):
+        super().__init__()
+        self.proj = nn.Identity() if proj is None else proj
+
+    def forward(self, state, predi):
+        state = self.proj(state.transpose(0, 1).flatten(1).transpose(0, 1))
+        predi = self.proj(predi.transpose(0, 1).flatten(1).transpose(0, 1))
+        cos = F.cosine_similarity(state, predi, dim=-1).mean()
+        return 1.0 - cos
+
+
 class VCLoss(nn.Module):
     """Variance-Covariance loss attracting means to zero and covariance to identity."""
 
@@ -76,7 +90,7 @@ class HingeStdLoss(torch.nn.Module):
             std_loss: Scalar tensor with the hinge loss on standard deviations
         """
         x = x - x.mean(dim=0, keepdim=True)
-        std = torch.sqrt(x.var(dim=0) + 0.0001)
+        std = torch.sqrt(x.var(dim=0, unbiased=False) + 1e-6)
         std_loss = torch.mean(F.relu(self.std_margin - std))
         return std_loss
 
@@ -104,11 +118,24 @@ class CovarianceLoss(torch.nn.Module):
         batch_size = x.shape[0]
         num_features = x.shape[-1]
         x = x - x.mean(dim=0, keepdim=True)
-        cov = (x.T @ x) / (batch_size - 1)  # [D, D]
-        # Calculate off-diagonal loss
+        denom = max(batch_size - 1, 1)
+        cov = (x.T @ x) / denom  # [D, D]
         cov_loss = self.off_diagonal(cov).pow(2).mean()
-
         return cov_loss
+
+
+class CorrelationPenalty(torch.nn.Module):
+    """Direct penalty on correlation for 2D embeddings to break y=-x collapse."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: [N, 2]. Returns mean squared correlation (0 = uncorrelated)."""
+        if x.shape[-1] != 2:
+            return torch.tensor(0.0, device=x.device)
+        x = x - x.mean(dim=0, keepdim=True)
+        std = x.std(dim=0, unbiased=False) + 1e-6
+        x_norm = x / std
+        corr = (x_norm[:, 0] * x_norm[:, 1]).mean()
+        return corr.pow(2)
 
 
 class TemporalSimilarityLoss(torch.nn.Module):
@@ -219,6 +246,7 @@ class VC_IDM_Sim_Regularizer(torch.nn.Module):
         # Initialize individual loss components
         self.std_loss_fn = HingeStdLoss(std_margin=std_margin)
         self.cov_loss_fn = CovarianceLoss()
+        self.corr_penalty_fn = CorrelationPenalty()
         self.sim_loss_fn = TemporalSimilarityLoss()
         self.idm_loss_fn = InverseDynamicsLoss(idm) if idm is not None else None
 
@@ -284,18 +312,21 @@ class VC_IDM_Sim_Regularizer(torch.nn.Module):
         # or [B*T*H*W, C_out] if first_t_only=False spatial_as_samples=True
         std_loss = self.std_loss_fn(x_for_vc)
         cov_loss = self.cov_loss_fn(x_for_vc)
+        corr_penalty = self.corr_penalty_fn(x_for_vc)
 
         total_weighted_loss = (
             self.cov_coeff * cov_loss
             + self.std_coeff * std_loss
+            + 40.0 * corr_penalty
             + self.sim_coeff_t * sim_loss_t
             + self.idm_coeff * idm_loss
         )
-        total_unweighted_loss = cov_loss + std_loss + sim_loss_t + idm_loss
+        total_unweighted_loss = cov_loss + std_loss + corr_penalty + sim_loss_t + idm_loss
 
         loss_dict = {
             "cov_loss": cov_loss.item(),
             "std_loss": std_loss.item(),
+            "corr_penalty": corr_penalty.item(),
             "sim_loss_t": sim_loss_t.item(),
             "idm_loss": idm_loss if isinstance(idm_loss, float) else idm_loss.item(),
         }

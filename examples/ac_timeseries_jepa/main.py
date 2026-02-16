@@ -132,10 +132,11 @@ def run(
     test_output = encoder(test_input)
     _, f, _, h, w = test_output.shape
 
+    # final_ln=Identity: LayerNorm on predictor forces zero-mean -> y=-x for 2D embeddings
     predictor = RNNPredictor(
         hidden_size=encoder.mlp_output_dim,
         action_dim=action_dim,
-        final_ln=nn.LayerNorm(encoder.mlp_output_dim),
+        final_ln=nn.Identity(),
     )
     aencoder = nn.Identity()
 
@@ -161,7 +162,8 @@ def run(
         sim_t_after_proj=cfg.model.regularizer.get("sim_t_after_proj", False),
     )
     ploss = SquareLossSeq()
-    jepa = JEPA(encoder, aencoder, predictor, regularizer, ploss).to(device)
+    pred_coeff = cfg.model.get("pred_coeff", 15.0)
+    jepa = JEPA(encoder, aencoder, predictor, regularizer, ploss, pred_coeff=pred_coeff).to(device)
 
     log_model_info(jepa, {})
     log_config(cfg)

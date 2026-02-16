@@ -418,10 +418,11 @@ class TimeSeriesEncoder(nn.Module):
         hidden_dim: int = 64,
         output_dim: int = 512,
         num_layers: int = 2,
+        use_final_ln: bool = True,
     ):
         super().__init__()
         self.mlp_output_dim = output_dim
-        self.final_ln = nn.LayerNorm(output_dim)
+        self.final_ln = nn.LayerNorm(output_dim) if use_final_ln else nn.Identity()
         layers = []
         d = input_dim
         for _ in range(num_layers - 1):

@@ -35,11 +35,17 @@ class JEPAbase(nn.Module):
 class JEPA(JEPAbase):
     """Trainable JEPA with prediction loss and anti-collapse regularizer."""
 
-    def __init__(self, encoder, aencoder, predictor, regularizer, predcost):
-        """Initialize JEPA with regularizer and prediction cost in addition to base components."""
+    def __init__(self, encoder, aencoder, predictor, regularizer, predcost, pred_coeff: float = 1.0):
+        """Initialize JEPA with regularizer and prediction cost in addition to base components.
+
+        Args:
+            pred_coeff: Weight for prediction loss. Use >1 (e.g. 10-20) so pred drives learning;
+                reg (cov, std, sim_t) dominates otherwise and pred loss barely moves.
+        """
         super().__init__(encoder, aencoder, predictor)
         self.regularizer = regularizer
         self.predcost = predcost
+        self.pred_coeff = pred_coeff
         self.ploss = 0
         self.rloss = 0
 
@@ -193,7 +199,7 @@ class JEPA(JEPAbase):
 
         # Compute total loss and return
         if compute_loss:
-            loss = rloss + ploss
+            loss = self.pred_coeff * ploss + rloss
             losses = (loss, rloss, rloss_unweight, rloss_dict, ploss)
         else:
             losses = None

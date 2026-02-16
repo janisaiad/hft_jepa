@@ -7,4 +7,13 @@ num_samples: 10000
 val_ratio: 0.1
 use_synthetic: false
 state_features: rich
-symbols: ["GOOGL", "AAPL", "AAL"]
+symbols: ["AAPL", "AMZN", "AAL", "MSFT", "GT", "INTC"]
+max_files_per_symbol: 20
+# per-symbol trading hours [start, end] as "HH:MM" (filters ts_event by time-of-day)
+symbol_hours:
+  AAPL: ["9:30", "16:00"]
+  AMZN: ["9:30", "16:00"]
+  AAL: ["9:30", "16:00"]
+  MSFT: ["9:30", "16:00"]
+  GT: ["9:30", "16:00"]
+  INTC: ["9:30", "16:00"]
