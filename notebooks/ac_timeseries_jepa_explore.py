@@ -12,6 +12,7 @@
 #     language: python
 #     name: python3
 # ---
+# Sync (preserve outputs): from repo root: python -m jupytext --to ipynb --update notebooks/ac_timeseries_jepa_explore.py
 
 # %% [markdown]
 # # AC Time Series JEPA - Interactive Explore

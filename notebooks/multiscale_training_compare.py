@@ -12,6 +12,7 @@
 #     language: python
 #     name: python3
 # ---
+# Sync (preserve outputs): from repo root: python -m jupytext --to ipynb --update notebooks/multiscale_training_compare.py
 
 # %% [markdown]
 # # Multi-Scale JEPA Training and Embedding Comparison
@@ -185,6 +186,25 @@ plt.tight_layout()
 plt.savefig(out_dir / "multiscale_losses.png", dpi=100)
 plt.show()
 
+# %% plot loss curves per scale (log scale)
+fig, axes = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
+for label, r in results.items():
+    axes[0].semilogy(r["losses"], label=label, alpha=0.8)
+    axes[1].semilogy(r["pred_losses"], label=label, alpha=0.8)
+    axes[2].semilogy(r["reg_losses"], label=label, alpha=0.8)
+axes[0].set_ylabel("Loss (log)")
+axes[0].set_title("Total (jepa + probe)")
+axes[1].set_title("Prediction loss")
+axes[2].set_title("Regularizer loss")
+for ax in axes:
+    ax.set_xlabel("Step")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+plt.suptitle("Training loss by time scale (log scale)")
+plt.tight_layout()
+plt.savefig(out_dir / "multiscale_losses_log.png", dpi=100)
+plt.show()
+
 # %% raw input trajectories: cone in data or model? plot first 2 dims (dprice, volume) of normalized input
 fig, axes = plt.subplots(1, 3, figsize=(14, 5), sharex=True, sharey=True)
 for idx, scale in enumerate(SCALES):
@@ -208,7 +228,11 @@ plt.tight_layout()
 plt.savefig(out_dir / "multiscale_raw_input_trajectories.png", dpi=120)
 plt.show()
 
-# %% trajectory plot: why cone? sim_t forces smooth flow; paths radiate from start -> cone
+# %% trajectory plot: why cone? (pure embeddings, no ad-hoc flip)
+# Cone forms because: (1) sim_coeff_t in VC_IDM_Sim_Regularizer penalizes large z_t - z_{t-1},
+# so trajectories are smooth in embedding space. (2) Sequences start from similar market states
+# (z_0 clustered). (3) They diverge over time -> paths fan out from a common region = cone.
+# Compare with raw input trajectories to see if cone is in data or induced by the regularizer.
 fig, axes = plt.subplots(1, 3, figsize=(14, 5), sharex=True, sharey=True)
 for idx, (label, r) in enumerate(results.items()):
     ax = axes[idx]
@@ -223,7 +247,7 @@ for idx, (label, r) in enumerate(results.items()):
     ax.set_title(f"{label}: trajectories (green=start, red=end)")
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
-plt.suptitle("Why cone? sim_t forces smooth flow; paths radiate from similar starts")
+plt.suptitle("Embedding trajectories (pure; sim_t smoothness + similar starts -> cone)")
 plt.tight_layout()
 plt.savefig(out_dir / "multiscale_trajectories.png", dpi=120)
 plt.show()
@@ -262,22 +286,140 @@ plt.tight_layout()
 plt.savefig(out_dir / "multiscale_embeddings_overlay.png", dpi=120)
 plt.show()
 
-# %% cone interpretation
+# %% [markdown]
+# ## What should the 2 embedding directions be? (theory / stylized facts)
+#
+# We train a JEPA world model: encoder maps observation sequence to latent $z$, predictor
+# does $z_{t+1} = f(z_t, a_t)$ with action = order-flow imbalance. So $z$ is a compact state
+# that should support prediction and control.
+#
+# **The two latent dimensions (dim 0, dim 1) are not tied to specific axes by the loss**;
+# the encoder can rotate them. But from **theory and stylized facts** we expect the learned
+# 2D state to span two main kinds of information:
+#
+# 1. **Price / return state (trend or level)**  
+#    One direction should track where we are in "price move" space: cumulative or recent
+#    return, or momentum vs mean-reversion regime. Stylized facts: momentum, short-term
+#    predictability from order flow, drift. The **probe is trained to predict dprice from $z$**,
+#    so at least one direction should align (possibly after rotation) with price/return
+#    state.
+#
+# 2. **Liquidity / activity / volatility state**  
+#    The other direction should reflect **liquidity or activity**: volume (normalized by
+#    bar_sec), spread, or trading intensity. Stylized facts: volume–volatility relation,
+#    liquidity risk, impact (price move per unit volume). The dynamics depend on both
+#    "where price is" and "how liquid/active the market is", so the world model needs both.
+#
+# So **dim 0 ≈ price/return state**, **dim 1 ≈ liquidity/activity state** (or a rotated
+# mix) is the natural interpretation. You can check by correlating embedding dims with
+# (dprice, volume) or with probe predictions; orientation may differ by scale (e.g. 1s
+# cone flipped vs 20ms).
+
+# %% cone interpretation and loss curves
 print("""
---- Cone interpretation ---
+--- Why do embeddings form a cone? ---
+(1) sim_coeff_t (temporal similarity in VC_IDM_Sim_Regularizer) penalizes large step-to-step
+    changes in z, so trajectories are smooth. (2) Many sequences start from similar market
+    states -> z_0 clustered. (3) They diverge over time -> paths fan out = cone. Embeddings
+    are kept pure (no flip); orientation can differ by scale (e.g. 1s vs 20ms).
+
+--- Loss curves ---
+Linear: multiscale_losses.png. Log scale: multiscale_losses_log.png (easier to see early decay).
+
+--- Cone: data vs model? ---
 Compare raw_input_trajectories.png vs multiscale_trajectories.png:
-
-1. CONE IN RAW DATA: If input trajectories also fan out from a cluster -> the cone reflects
-   real market structure (sequences start similar, diverge over time). The encoder learned it.
-   This is meaningful: distance from origin ≈ cumulative change, angle ≈ direction.
-
-2. CONE ONLY IN EMBEDDINGS: If raw input is more spread/round -> the cone is a model artifact
-   (sim_t + predictor dynamics). Try sim_coeff_t=0 or lower.
-
-3. NORMALIZATION: Data is z-scored (global mean/std) + volume/bar_sec. Early timesteps often
-   similar across sequences -> compressed. Later timesteps diverge -> spread. That can create
-   a cone in INPUT space before encoding. Check if raw trajectories show it.
+- Cone in raw data too -> encoder learned real structure (meaningful).
+- Cone only in embeddings -> artifact of sim_t; try sim_coeff_t=0 or lower.
+- Data is z-scored + volume/bar_sec; similar starts + divergence can create cone in input.
 """)
+
+# %% cone angle (≈ correlation liquidity–returns) and extreme / middle points
+# Cone axis and opening: if dim0≈return, dim1≈liquidity, correlation(dim0,dim1) sets the cone axis
+# orientation; angular spread of trajectory directions = cone opening angle.
+cone_stats = {}
+for label, r in results.items():
+    z = r["z_2d"].numpy()  # [N, T, 2]
+    z_0 = z[:, 0, :]
+    z_end = z[:, -1, :]
+    disp = z_end - z_0
+    # trajectory direction angle (radians), then degrees
+    angles_rad = np.arctan2(disp[:, 1], disp[:, 0])
+    angles_deg = np.degrees(angles_rad)
+    # cone opening = angular spread (unwrap so we get contiguous range)
+    angles_deg_sorted = np.sort(angles_deg)
+    spread_deg = angles_deg_sorted[-1] - angles_deg_sorted[0]
+    if spread_deg > 180:
+        spread_deg = 360 - spread_deg
+    corr_embed = np.corrcoef(z_end[:, 0], z_end[:, 1])[0, 1]
+    # principal axis angle (angle of cone axis from dim0): from eigenvector or slope
+    cov_z = np.cov(z_end.T)
+    eigvals, eigvecs = np.linalg.eigh(cov_z)
+    idx_max = np.argmax(eigvals)
+    principal_angle_rad = np.arctan2(eigvecs[1, idx_max], eigvecs[0, idx_max])
+    principal_angle_deg = np.degrees(principal_angle_rad)
+    cone_stats[label] = {
+        "corr_embed": corr_embed,
+        "cone_spread_deg": spread_deg,
+        "principal_angle_deg": principal_angle_deg,
+        "angles_deg": angles_deg,
+        "z_0": z_0,
+        "z_end": z_end,
+    }
+    # indices: extreme (min/max angle = cone corners), middle (closest to median angle)
+    i_min = np.argmin(angles_deg)
+    i_max = np.argmax(angles_deg)
+    median_angle = np.median(angles_deg)
+    i_mid = np.argmin(np.abs(angles_deg - median_angle))
+    # 25th and 75th percentile angles for "sides" of cone
+    q25 = np.percentile(angles_deg, 25)
+    q75 = np.percentile(angles_deg, 75)
+    i_q25 = np.argmin(np.abs(angles_deg - q25))
+    i_q75 = np.argmin(np.abs(angles_deg - q75))
+    cone_stats[label]["indices"] = {
+        "corner_low": int(i_min),
+        "corner_high": int(i_max),
+        "middle": int(i_mid),
+        "side_low": int(i_q25),
+        "side_high": int(i_q75),
+    }
+    cone_stats[label]["points"] = {
+        "corner_low": (float(z_end[i_min, 0]), float(z_end[i_min, 1]), float(angles_deg[i_min])),
+        "corner_high": (float(z_end[i_max, 0]), float(z_end[i_max, 1]), float(angles_deg[i_max])),
+        "middle": (float(z_end[i_mid, 0]), float(z_end[i_mid, 1]), float(angles_deg[i_mid])),
+    }
+
+for label in cone_stats:
+    s = cone_stats[label]
+    print(f"\n--- {label} ---")
+    print(f"  corr(emb_dim0, emb_dim1) = {s['corr_embed']:.4f}  (cone axis ~ liquidity–return correlation)")
+    print(f"  cone opening (angular spread of trajectory directions) = {s['cone_spread_deg']:.1f} deg")
+    print(f"  principal axis angle (from dim0) = {s['principal_angle_deg']:.1f} deg")
+    print(f"  corner_low  idx={s['indices']['corner_low']:4d}  z=({s['points']['corner_low'][0]:.3f}, {s['points']['corner_low'][1]:.3f})  angle={s['points']['corner_low'][2]:.1f} deg")
+    print(f"  corner_high idx={s['indices']['corner_high']:4d}  z=({s['points']['corner_high'][0]:.3f}, {s['points']['corner_high'][1]:.3f})  angle={s['points']['corner_high'][2]:.1f} deg")
+    print(f"  middle      idx={s['indices']['middle']:4d}  z=({s['points']['middle'][0]:.3f}, {s['points']['middle'][1]:.3f})  angle={s['points']['middle'][2]:.1f} deg")
+
+# %% plot cone with extreme and middle points highlighted
+fig, axes = plt.subplots(1, 3, figsize=(14, 5), sharex=True, sharey=True)
+for idx, (label, r) in enumerate(results.items()):
+    ax = axes[idx]
+    z = r["z_2d"].numpy()
+    z_end = z[:, -1, :]
+    s = cone_stats[label]
+    ax.scatter(z_end[:, 0], z_end[:, 1], alpha=0.4, s=25, c="gray", label="all")
+    i_cl, i_ch, i_mid = s["indices"]["corner_low"], s["indices"]["corner_high"], s["indices"]["middle"]
+    ax.scatter(z_end[i_cl, 0], z_end[i_cl, 1], s=120, c="red", marker="^", zorder=5, label="corner low")
+    ax.scatter(z_end[i_ch, 0], z_end[i_ch, 1], s=120, c="blue", marker="v", zorder=5, label="corner high")
+    ax.scatter(z_end[i_mid, 0], z_end[i_mid, 1], s=120, c="green", marker="o", zorder=5, label="middle")
+    ax.set_xlabel("Embedding dim 0")
+    ax.set_ylabel("Embedding dim 1")
+    ax.set_title(f"{label}: cone spread={s['cone_spread_deg']:.0f} deg, corr={s['corr_embed']:.3f}")
+    ax.legend(loc="upper left", fontsize=8)
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+plt.suptitle("Cone: corners (extreme angles) vs middle (median angle)")
+plt.tight_layout()
+plt.savefig(out_dir / "multiscale_cone_angle_and_extremes.png", dpi=120)
+plt.show()
 
 # %% summary stats and correlation per scale
 print("\n--- Summary ---")
