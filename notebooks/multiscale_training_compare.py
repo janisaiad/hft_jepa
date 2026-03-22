@@ -19,6 +19,7 @@
 #
 # Train JEPA at second (1s), minute (60s), and 20ms scales. Volume and count features
 # are normalized by bar_sec so they are comparable across scales. Compare embeddings.
+# Same content as multiscale_plotly_identify but with matplotlib. Seed set for reproducibility.
 
 # %% imports and setup
 import os
@@ -29,6 +30,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+from scipy.spatial import ConvexHull
+
+SEED = 42
 try:
     from torch.amp import GradScaler, autocast
     _autocast = lambda dt, en, dtype: autocast(dt, enabled=en, dtype=dtype)
@@ -48,11 +52,13 @@ if str(ROOT) not in sys.path:
 os.chdir(ROOT)
 
 from eb_jepa.datasets.utils import init_data
+from eb_jepa.training_utils import setup_seed
 from eb_jepa.architectures import InverseDynamicsModel, RNNPredictor, TimeSeriesEncoder
 from eb_jepa.jepa import JEPA, JEPAProbe
 from eb_jepa.losses import CosineLossSeq, VC_IDM_Sim_Regularizer
 from eb_jepa.state_decoder import MLPStateHead
 
+setup_seed(SEED)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 out_dir = ROOT / "notebooks" / "outputs"
 out_dir.mkdir(exist_ok=True)
@@ -146,26 +152,35 @@ def train_scale(loader, data_config, scale_label, num_steps):
             print(f"  {scale_label} step {step}/{num_steps} total={total:.4f} pred={pl.item():.4f} reg={rloss.item():.4f}")
     jepa.eval()
     all_z = []
+    raw_records = []
     with torch.no_grad():
-        for i, (x_b, _, _, _, _) in enumerate(loader):
+        for i, (x_b, a_b, loc_b, _, _) in enumerate(loader):
             if i >= 16:
                 break
             x_b = x_b.permute(0, 2, 1, 3, 4).to(device)
             x_b = torch.nan_to_num(x_b, nan=0.0, posinf=0.0, neginf=0.0)
             z_b = jepa.encode(x_b)
             all_z.append(z_b.cpu())
+            for b in range(loc_b.size(0)):
+                raw_records.append({
+                    "dprice": loc_b[b, :, 0].numpy().copy(),
+                    "volume": loc_b[b, :, 1].numpy().copy(),
+                    "spread": loc_b[b, :, 2].numpy().copy() if loc_b.size(2) > 2 else np.zeros(loc_b.size(1)),
+                    "imbalance": a_b[b, :, 0].numpy().copy(),
+                })
     z_all = torch.cat(all_z, dim=0)
     z_2d = z_all[:, :, :, 0, 0].permute(0, 2, 1)
-    return jepa, np.array(losses), np.array(pred_losses), np.array(reg_losses), z_2d
+    return jepa, np.array(losses), np.array(pred_losses), np.array(reg_losses), z_2d, raw_records
 
 # %% run training for each scale
 results = {}
 for scale in SCALES:
+    setup_seed(SEED)
     print(f"\n--- Scale: {scale['label']} (bar_sec={scale['bar_sec']}) ---")
     loader, val_loader, data_config = init_data("hft_timeseries", cfg_data={"bar_sec": scale["bar_sec"]})
     print(f"  Batches: {len(loader)}, batch_size: {data_config.batch_size}")
-    jepa, losses, pred_losses, reg_losses, z_2d = train_scale(loader, data_config, scale["label"], NUM_STEPS_PER_SCALE)
-    results[scale["label"]] = {"losses": losses, "pred_losses": pred_losses, "reg_losses": reg_losses, "z_2d": z_2d, "jepa": jepa}
+    jepa, losses, pred_losses, reg_losses, z_2d, raw_records = train_scale(loader, data_config, scale["label"], NUM_STEPS_PER_SCALE)
+    results[scale["label"]] = {"losses": losses, "pred_losses": pred_losses, "reg_losses": reg_losses, "z_2d": z_2d, "raw_records": raw_records, "jepa": jepa}
 
 # %% plot loss curves per scale (total, pred, reg)
 fig, axes = plt.subplots(1, 3, figsize=(14, 4), sharex=True)
@@ -206,6 +221,7 @@ plt.savefig(out_dir / "multiscale_losses_log.png", dpi=100)
 plt.show()
 
 # %% raw input trajectories: cone in data or model? plot first 2 dims (dprice, volume) of normalized input
+setup_seed(SEED)
 fig, axes = plt.subplots(1, 3, figsize=(14, 5), sharex=True, sharey=True)
 for idx, scale in enumerate(SCALES):
     loader, _, _ = init_data("hft_timeseries", cfg_data={"bar_sec": scale["bar_sec"]})
@@ -284,6 +300,198 @@ ax.set_aspect("equal")
 ax.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(out_dir / "multiscale_embeddings_overlay.png", dpi=120)
+plt.show()
+
+# %% scatter of final embeddings per scale (matplotlib equivalent of plotly_identify)
+for label, r in results.items():
+    z = r["z_2d"].numpy()
+    z_end = z[:, -1, :]
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(z_end[:, 0], z_end[:, 1], alpha=0.7, s=20)
+    ax.set_xlabel("Embedding dim 0")
+    ax.set_ylabel("Embedding dim 1")
+    ax.set_title(f"Embeddings ({label}): index and dataset (dprice, volume, imbalance)")
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_dir / f"mpl_embed_{label}.png", dpi=120)
+    plt.show()
+
+# %% trajectory lines (path from z_0 to z_end) per scale, first n_show samples
+for label, r in results.items():
+    z = r["z_2d"].numpy()
+    raw = r["raw_records"]
+    n_show = min(30, z.shape[0])
+    fig, ax = plt.subplots(figsize=(6, 6))
+    for i in range(n_show):
+        ax.plot(z[i, :, 0], z[i, :, 1], alpha=0.5, linewidth=1)
+        ax.scatter(z[i, 0, 0], z[i, 0, 1], s=15, c="green", zorder=5)
+        ax.scatter(z[i, -1, 0], z[i, -1, 1], s=15, c="red", zorder=5)
+    ax.set_xlabel("Embedding dim 0")
+    ax.set_ylabel("Embedding dim 1")
+    ax.set_title(f"Trajectories ({label}): first {n_show} samples (green=start, red=end)")
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_dir / f"mpl_trajectories_{label}.png", dpi=120)
+    plt.show()
+
+# %% convex hull cone selection: find 3 extreme points via sharpest corners
+def _cones_from_convex_hull(z_end, z_full):
+    """
+    Use convex hull of z_end; at each vertex, dot product of consecutive edge vectors.
+    Smaller dot product = sharper corner. Sort by dot product ascending, pick top 3.
+    Among those 3, base = smallest trajectory displacement (apex); other two = cone sides.
+    Returns (base_idx, cone_idx_a, cone_idx_b).
+    """
+    pts = z_end
+    if len(pts) < 4:
+        return 0, min(1, len(pts) - 1), min(2, len(pts) - 1)
+    hull = ConvexHull(pts)
+    vert_idx = hull.vertices  # indices into pts
+    nv = len(vert_idx)
+    dots = []
+    for i in range(nv):
+        v_prev = pts[vert_idx[(i - 1) % nv]]
+        v_curr = pts[vert_idx[i]]
+        v_next = pts[vert_idx[(i + 1) % nv]]
+        e1 = v_curr - v_prev
+        e2 = v_next - v_curr
+        n1, n2 = np.linalg.norm(e1), np.linalg.norm(e2)
+        if n1 < 1e-10 or n2 < 1e-10:
+            dot = 1.0
+        else:
+            dot = np.dot(e1, e2) / (n1 * n2)
+        dots.append((dot, vert_idx[i]))
+    dots.sort(key=lambda x: x[0])
+    idx_a, idx_b, idx_c = dots[0][1], dots[1][1], dots[2][1]
+    disp_a = np.linalg.norm(z_full[idx_a, -1, :] - z_full[idx_a, 0, :])
+    disp_b = np.linalg.norm(z_full[idx_b, -1, :] - z_full[idx_b, 0, :])
+    disp_c = np.linalg.norm(z_full[idx_c, -1, :] - z_full[idx_c, 0, :])
+    disps = [(disp_a, idx_a), (disp_b, idx_b), (disp_c, idx_c)]
+    disps.sort(key=lambda x: x[0])
+    base_idx = disps[0][1]
+    cone_indices = [idx for _, idx in disps[1:]]
+    return base_idx, cone_indices[0], cone_indices[1]
+
+# %% cone analysis helper: compute stats for one index
+def _analyze_one(idx, z, raw):
+    z_0 = z[idx, 0, :]
+    z_end = z[idx, -1, :]
+    disp = z_end - z_0
+    angle_rad = np.arctan2(disp[1], disp[0])
+    angle_deg = np.degrees(angle_rad)
+    r_ = raw[idx]
+    dprice, vol, imb = r_["dprice"], r_["volume"], r_["imbalance"]
+    return {
+        "idx": idx, "z_0": z_0, "z_end": z_end, "disp": disp, "angle_deg": angle_deg,
+        "disp_norm": np.linalg.norm(disp),
+        "dprice_sum": dprice.sum(), "dprice_mean": dprice.mean(), "dprice_std": dprice.std(),
+        "dprice_cumsum_end": np.cumsum(dprice)[-1],
+        "volume_sum": vol.sum(), "volume_mean": vol.mean(),
+        "imbalance_mean": imb.mean(), "imbalance_std": imb.std(),
+    }
+
+# %% 60s cone: convex hull extreme points (base = apex, cone = sides)
+scale_label = "60s"
+r = results[scale_label]
+z = r["z_2d"].numpy()
+raw = r["raw_records"]
+z_end = z[:, -1, :]
+base_idx, cone_idx_a, cone_idx_b = _cones_from_convex_hull(z_end, z)
+base = _analyze_one(base_idx, z, raw)
+cone_a = _analyze_one(cone_idx_a, z, raw)
+cone_b = _analyze_one(cone_idx_b, z, raw)
+print(f"=== 60s cone: base {base_idx}, triangle {cone_idx_a} & {cone_idx_b} (convex hull) ===\n")
+for name, d in [(f"Base {base_idx}", base), (f"Cone {cone_idx_a}", cone_a), (f"Cone {cone_idx_b}", cone_b)]:
+    print(f"  {name}: z_0=({d['z_0'][0]:.4f},{d['z_0'][1]:.4f}) z_end=({d['z_end'][0]:.4f},{d['z_end'][1]:.4f}) disp_norm={d['disp_norm']:.4f} angle={d['angle_deg']:.1f}deg")
+    print(f"    dprice sum={d['dprice_sum']:.6f} vol_sum={d['volume_sum']:.2f} imb_mean={d['imbalance_mean']:.4f}")
+dist_ba = np.linalg.norm(base["z_0"] - cone_a["z_0"])
+dist_bb = np.linalg.norm(base["z_0"] - cone_b["z_0"])
+print(f"  z_0 distances: base->{cone_idx_a}={dist_ba:.4f} base->{cone_idx_b}={dist_bb:.4f}")
+print("\n  Interpretation: Base has smallest displacement (apex). Cone vertices = sharpest corners on convex hull. Cone = same region of starts, two divergent directions (return vs liquidity).")
+
+# %% plot 60s trajectories - matplotlib 2x2 (convex hull cones)
+r = results["60s"]
+z, raw = r["z_2d"].numpy(), r["raw_records"]
+z_end = z[:, -1, :]
+base_idx, cone_idx_a, cone_idx_b = _cones_from_convex_hull(z_end, z)
+T = z.shape[1]
+fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+for name, idx, color in [(f"base {base_idx}", base_idx, "black"), (f"cone {cone_idx_a}", cone_idx_a, "red"), (f"cone {cone_idx_b}", cone_idx_b, "blue")]:
+    axes[0, 0].plot(z[idx, :, 0], z[idx, :, 1], color=color, label=name)
+    axes[0, 1].plot(range(T), raw[idx]["dprice"], color=color)
+    axes[1, 0].plot(range(T), raw[idx]["volume"], color=color)
+    axes[1, 1].plot(range(T), raw[idx]["imbalance"], color=color)
+axes[0, 0].set_title(f"60s: embedding paths ({base_idx} base, {cone_idx_a} & {cone_idx_b} cone)")
+axes[0, 0].set_xlabel("Embedding dim 0")
+axes[0, 0].set_ylabel("Embedding dim 1")
+axes[0, 0].legend()
+axes[0, 0].set_aspect("equal")
+axes[0, 0].grid(True, alpha=0.3)
+axes[0, 1].set_title("dprice")
+axes[0, 1].set_xlabel("t")
+axes[0, 1].grid(True, alpha=0.3)
+axes[1, 0].set_title("volume")
+axes[1, 0].set_xlabel("t")
+axes[1, 0].grid(True, alpha=0.3)
+axes[1, 1].set_title("imbalance")
+axes[1, 1].set_xlabel("t")
+axes[1, 1].grid(True, alpha=0.3)
+plt.suptitle(f"60s cone: base {base_idx} vs cone {cone_idx_a} & {cone_idx_b}")
+plt.tight_layout()
+plt.savefig(out_dir / "mpl_cone_analysis_60s.png", dpi=120)
+plt.show()
+
+# %% 20ms cone: convex hull extreme points (base = apex, cone = sides)
+scale_label = "20ms"
+r = results[scale_label]
+z = r["z_2d"].numpy()
+raw = r["raw_records"]
+z_end = z[:, -1, :]
+base_idx, cone_idx_a, cone_idx_b = _cones_from_convex_hull(z_end, z)
+base = _analyze_one(base_idx, z, raw)
+cone_a = _analyze_one(cone_idx_a, z, raw)
+cone_b = _analyze_one(cone_idx_b, z, raw)
+print(f"=== 20ms cone: base {base_idx}, triangle {cone_idx_a} & {cone_idx_b} (convex hull) ===\n")
+for name, d in [(f"Base {base_idx}", base), (f"Cone {cone_idx_a}", cone_a), (f"Cone {cone_idx_b}", cone_b)]:
+    print(f"  {name}: z_0=({d['z_0'][0]:.4f},{d['z_0'][1]:.4f}) z_end=({d['z_end'][0]:.4f},{d['z_end'][1]:.4f}) disp_norm={d['disp_norm']:.4f} angle={d['angle_deg']:.1f}deg")
+    print(f"    dprice sum={d['dprice_sum']:.6f} vol_sum={d['volume_sum']:.2f} imb_mean={d['imbalance_mean']:.4f}")
+dist_ba = np.linalg.norm(base["z_0"] - cone_a["z_0"])
+dist_bb = np.linalg.norm(base["z_0"] - cone_b["z_0"])
+print(f"  z_0 distances: base->{cone_idx_a}={dist_ba:.4f} base->{cone_idx_b}={dist_bb:.4f}")
+print("\n  Interpretation: Base has smallest displacement (apex). Cone vertices = sharpest corners on convex hull. Cone = shared start, base stays near apex, two sides diverge.")
+
+# %% plot 20ms trajectories - matplotlib 2x2 (convex hull cones)
+r = results["20ms"]
+z, raw = r["z_2d"].numpy(), r["raw_records"]
+z_end = z[:, -1, :]
+base_idx, cone_idx_a, cone_idx_b = _cones_from_convex_hull(z_end, z)
+T = z.shape[1]
+fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+for name, idx, color in [(f"base {base_idx}", base_idx, "black"), (f"cone {cone_idx_a}", cone_idx_a, "red"), (f"cone {cone_idx_b}", cone_idx_b, "blue")]:
+    axes[0, 0].plot(z[idx, :, 0], z[idx, :, 1], color=color, label=name)
+    axes[0, 1].plot(range(T), raw[idx]["dprice"], color=color)
+    axes[1, 0].plot(range(T), raw[idx]["volume"], color=color)
+    axes[1, 1].plot(range(T), raw[idx]["imbalance"], color=color)
+axes[0, 0].set_title(f"20ms: embedding paths ({base_idx} base, {cone_idx_a} & {cone_idx_b} cone)")
+axes[0, 0].set_xlabel("Embedding dim 0")
+axes[0, 0].set_ylabel("Embedding dim 1")
+axes[0, 0].legend()
+axes[0, 0].set_aspect("equal")
+axes[0, 0].grid(True, alpha=0.3)
+axes[0, 1].set_title("dprice")
+axes[0, 1].set_xlabel("t")
+axes[0, 1].grid(True, alpha=0.3)
+axes[1, 0].set_title("volume")
+axes[1, 0].set_xlabel("t")
+axes[1, 0].grid(True, alpha=0.3)
+axes[1, 1].set_title("imbalance")
+axes[1, 1].set_xlabel("t")
+axes[1, 1].grid(True, alpha=0.3)
+plt.suptitle(f"20ms cone: base {base_idx} vs cone {cone_idx_a} & {cone_idx_b}")
+plt.tight_layout()
+plt.savefig(out_dir / "mpl_cone_analysis_20ms.png", dpi=120)
 plt.show()
 
 # %% [markdown]
